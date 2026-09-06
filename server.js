@@ -1,74 +1,1404 @@
-const express=require('express');
-const cors=require('cors');
-const bcrypt=require('bcryptjs');
-const jwt=require('jsonwebtoken');
-const {Pool}=require('pg');
-const path=require('path');
+const express = require("express");
+const path = require("path");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const { Pool } = require("pg");
 
-const app=express();
-app.use(cors());
+const app = express();
+
 app.use(express.json());
-const pool=new Pool({connectionString:process.env.DATABASE_URL||'postgres://kirathimo:kirathimo@db:5432/kirathimo'});
-const JWT_SECRET=process.env.JWT_SECRET||'change-me-in-production';
-const ADMIN_EMAIL=process.env.ADMIN_EMAIL||'admin@kirathimo.local';
-const ADMIN_PASSWORD=process.env.ADMIN_PASSWORD||'ChangeMe123!';
-async function q(sql,p=[]){return (await pool.query(sql,p)).rows;}
 
-async function init(){
- await pool.query(`
- CREATE TABLE IF NOT EXISTS users(id SERIAL PRIMARY KEY,email TEXT UNIQUE NOT NULL,password_hash TEXT NOT NULL,role TEXT NOT NULL DEFAULT 'ADMIN',member_id INT REFERENCES members(id),created_at TIMESTAMPTZ DEFAULT NOW());
- CREATE TABLE IF NOT EXISTS members(id SERIAL PRIMARY KEY,name TEXT NOT NULL,phone TEXT,email TEXT,joined_date DATE DEFAULT CURRENT_DATE,active BOOLEAN DEFAULT TRUE,expected_monthly NUMERIC(14,2) DEFAULT 0);
- CREATE TABLE IF NOT EXISTS contributions(id SERIAL PRIMARY KEY,member_id INT REFERENCES members(id),amount NUMERIC(14,2) NOT NULL,contribution_date DATE DEFAULT CURRENT_DATE,month DATE NOT NULL,notes TEXT,units NUMERIC(18,8) DEFAULT 0,unit_price NUMERIC(18,8) DEFAULT 1);
- CREATE TABLE IF NOT EXISTS loans(id SERIAL PRIMARY KEY,member_id INT REFERENCES members(id),principal NUMERIC(14,2) NOT NULL,interest_rate NUMERIC(8,3) DEFAULT 10,status TEXT DEFAULT 'ACTIVE',issued_date DATE DEFAULT CURRENT_DATE,due_date DATE,paid NUMERIC(14,2) DEFAULT 0);
- CREATE TABLE IF NOT EXISTS investments(id SERIAL PRIMARY KEY,name TEXT NOT NULL,type TEXT NOT NULL,quantity NUMERIC(18,6) DEFAULT 0,cost NUMERIC(14,2) DEFAULT 0,current_value NUMERIC(14,2) DEFAULT 0,notes TEXT);
- CREATE TABLE IF NOT EXISTS transactions(id SERIAL PRIMARY KEY,kind TEXT NOT NULL,amount NUMERIC(14,2) NOT NULL,member_id INT REFERENCES members(id),reference TEXT,tx_date DATE DEFAULT CURRENT_DATE,notes TEXT);
- CREATE TABLE IF NOT EXISTS audit_log(id SERIAL PRIMARY KEY,user_id INT REFERENCES users(id),action TEXT NOT NULL,entity TEXT,entity_id INT,details JSONB,created_at TIMESTAMPTZ DEFAULT NOW());
- `);
- await pool.query(`ALTER TABLE contributions ADD COLUMN IF NOT EXISTS units NUMERIC(18,8) DEFAULT 0; ALTER TABLE contributions ADD COLUMN IF NOT EXISTS unit_price NUMERIC(18,8) DEFAULT 1;`);
- await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS expected_monthly NUMERIC(14,2) DEFAULT 0;`);
- await pool.query(`UPDATE contributions SET units=amount,unit_price=1 WHERE units IS NULL OR units=0`);
- const hash=await bcrypt.hash(ADMIN_PASSWORD,12);
- await pool.query(`INSERT INTO users(email,password_hash,role) VALUES($1,$2,'ADMIN') ON CONFLICT(email) DO NOTHING`,[ADMIN_EMAIL,hash]);
- const [{n}]=await q('SELECT COUNT(*)::int n FROM members');
- if(n===0){
-  const m=await q("INSERT INTO members(name,phone,email,expected_monthly) VALUES ('Sample Member A','0700000000','a@example.com',10000),('Sample Member B','0711111111','b@example.com',10000) RETURNING id");
-  await pool.query("INSERT INTO contributions(member_id,amount,month,units,unit_price) VALUES ($1,10000,date_trunc('month',CURRENT_DATE),10000,1),($2,15000,date_trunc('month',CURRENT_DATE),15000,1)",[m[0].id,m[1].id]);
-  await pool.query("INSERT INTO investments(name,type,quantity,cost,current_value) VALUES ('Kenya Pipeline Company','LISTED_SHARE',100,8500,9200),('Kirathimo MMF','MONEY_MARKET_FUND',1,50000,51200),('Government Bond','BOND',1,100000,103500)");
-  await pool.query("INSERT INTO transactions(kind,amount,reference,notes) VALUES ('CONTRIBUTION',25000,'SEED-CONTRIBUTIONS','Demo seed data'),('INVESTMENT_PURCHASE',158500,'SEED-INVESTMENTS','Demo seed data')");
- }
+const PORT = process.env.PORT || 10000;
+const JWT_SECRET = process.env.JWT_SECRET || "change-this-in-production";
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL
+    ? { rejectUnauthorized: false }
+    : false
+});
+
+// --------------------------------------------------
+// DATABASE INITIALIZATION
+// --------------------------------------------------
+
+async function init() {
+  // IMPORTANT:
+  // members MUST be created before users because users.member_id
+  // references members(id).
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS members (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      phone TEXT,
+      email TEXT,
+      joined_date DATE DEFAULT CURRENT_DATE,
+      active BOOLEAN DEFAULT TRUE,
+      expected_monthly NUMERIC(14,2) DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'ADMIN',
+      member_id INT REFERENCES members(id),
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS contributions (
+      id SERIAL PRIMARY KEY,
+      member_id INT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      amount NUMERIC(14,2) NOT NULL,
+      units NUMERIC(18,6) DEFAULT 0,
+      unit_price NUMERIC(14,6) DEFAULT 1,
+      contribution_date DATE DEFAULT CURRENT_DATE,
+      month_for DATE,
+      notes TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS loans (
+      id SERIAL PRIMARY KEY,
+      member_id INT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      principal NUMERIC(14,2) NOT NULL,
+      interest_rate NUMERIC(8,4) DEFAULT 0,
+      principal_paid NUMERIC(14,2) DEFAULT 0,
+      interest_paid NUMERIC(14,2) DEFAULT 0,
+      issued_date DATE DEFAULT CURRENT_DATE,
+      due_date DATE,
+      status TEXT DEFAULT 'ACTIVE',
+      notes TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS loan_repayments (
+      id SERIAL PRIMARY KEY,
+      loan_id INT NOT NULL REFERENCES loans(id) ON DELETE CASCADE,
+      amount NUMERIC(14,2) NOT NULL,
+      repayment_date DATE DEFAULT CURRENT_DATE,
+      notes TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS investments (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'OTHER',
+      units NUMERIC(18,6) DEFAULT 0,
+      purchase_price NUMERIC(14,2) DEFAULT 0,
+      current_value NUMERIC(14,2) DEFAULT 0,
+      purchase_date DATE DEFAULT CURRENT_DATE,
+      notes TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS investment_values (
+      id SERIAL PRIMARY KEY,
+      investment_id INT NOT NULL REFERENCES investments(id) ON DELETE CASCADE,
+      value NUMERIC(14,2) NOT NULL,
+      value_date DATE DEFAULT CURRENT_DATE,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS transactions (
+      id SERIAL PRIMARY KEY,
+      member_id INT REFERENCES members(id) ON DELETE SET NULL,
+      transaction_type TEXT NOT NULL,
+      amount NUMERIC(14,2) NOT NULL DEFAULT 0,
+      description TEXT,
+      reference_id INT,
+      transaction_date DATE DEFAULT CURRENT_DATE,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id SERIAL PRIMARY KEY,
+      user_id INT REFERENCES users(id) ON DELETE SET NULL,
+      action TEXT NOT NULL,
+      entity_type TEXT,
+      entity_id INT,
+      details TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS nav_snapshots (
+      id SERIAL PRIMARY KEY,
+      nav NUMERIC(18,2) NOT NULL,
+      units NUMERIC(18,6) NOT NULL,
+      unit_price NUMERIC(18,8) NOT NULL,
+      snapshot_date DATE DEFAULT CURRENT_DATE,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+
+  // Create a default admin if one does not exist.
+  const adminEmail =
+    process.env.ADMIN_EMAIL || "admin@kirathimo.local";
+
+  const adminPassword =
+    process.env.ADMIN_PASSWORD || "ChangeMe123!";
+
+  const existingAdmin = await pool.query(
+    "SELECT id FROM users WHERE email = $1",
+    [adminEmail]
+  );
+
+  if (existingAdmin.rowCount === 0) {
+    const passwordHash = await bcrypt.hash(adminPassword, 12);
+
+    await pool.query(
+      `INSERT INTO users(email, password_hash, role)
+       VALUES($1, $2, 'ADMIN')`,
+      [adminEmail, passwordHash]
+    );
+
+    console.log(`Default admin created: ${adminEmail}`);
+  }
+
+  console.log("Database initialized successfully.");
 }
-function auth(req,res,next){const h=req.headers.authorization||'';const token=h.startsWith('Bearer ')?h.slice(7):null;if(!token)return res.status(401).json({error:'Admin login required'});try{req.user=jwt.verify(token,JWT_SECRET);next()}catch{return res.status(401).json({error:'Invalid or expired login'})}}
-async function audit(req,action,entity,id,details={}){if(req.user)await pool.query('INSERT INTO audit_log(user_id,action,entity,entity_id,details) VALUES($1,$2,$3,$4,$5)',[req.user.id,action,entity,id,JSON.stringify(details)]);}
-async function nav(){
- const [{investments}]=await q('SELECT COALESCE(SUM(current_value),0)::numeric investments FROM investments');
- const [{loans}]=await q("SELECT COALESCE(SUM(GREATEST(principal-paid,0)),0)::numeric loans FROM loans WHERE status!='PAID'");
- const [{cash}]=await q(`SELECT COALESCE(SUM(CASE WHEN kind IN ('CONTRIBUTION','LOAN_REPAYMENT','INVESTMENT_SALE','INCOME') THEN amount WHEN kind IN ('LOAN_DISBURSEMENT','INVESTMENT_PURCHASE','EXPENSE') THEN -amount ELSE 0 END),0)::numeric cash FROM transactions`);
- const [{units}]=await q('SELECT COALESCE(SUM(units),0)::numeric units FROM contributions');
- const netAssets=+investments + +loans + +cash; const unitPrice=+units?netAssets/+units:1;
- const [{contributions}]=await q('SELECT COALESCE(SUM(amount),0)::numeric contributions FROM contributions');
- const [{gain}]=await q('SELECT COALESCE(SUM(current_value-cost),0)::numeric gain FROM investments');
- return {netAssets,investments:+investments,loansReceivable:+loans,cash:+cash,totalUnits:+units,unitPrice,contributions:+contributions,investmentGain:+gain,asOf:new Date().toISOString()};
+
+// --------------------------------------------------
+// AUTHENTICATION
+// --------------------------------------------------
+
+function createToken(user) {
+  return jwt.sign(
+    {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      member_id: user.member_id
+    },
+    JWT_SECRET,
+    { expiresIn: "7d" }
+  );
 }
-app.get('/api/health',(r,s)=>s.json({ok:true,group:'Kirathimo Family Investment Group',version:'3.0.0'}));
-app.post('/api/login',async(r,s)=>{const {email,password}=r.body||{};const u=(await q('SELECT * FROM users WHERE lower(email)=lower($1)',[email||'']))[0];if(!u||!(await bcrypt.compare(password||'',u.password_hash)))return s.status(401).json({error:'Incorrect email or password'});const token=jwt.sign({id:u.id,email:u.email,role:u.role,member_id:u.member_id},JWT_SECRET,{expiresIn:'12h'});s.json({token,user:{id:u.id,email:u.email,role:u.role,member_id:u.member_id}})});
-app.get('/api/nav',async(r,s)=>s.json(await nav()));
-app.get('/api/dashboard',async(r,s)=>{const n=await nav();const [{members}]=await q('SELECT COUNT(*)::int members FROM members WHERE active');const [{overdue}]=await q("SELECT COUNT(*)::int overdue FROM loans WHERE status!='PAID' AND due_date IS NOT NULL AND due_date<CURRENT_DATE");const [{arrears}]=await q(`SELECT COALESCE(SUM(GREATEST(expected_monthly - COALESCE(c.month_paid,0),0)),0)::numeric arrears FROM members m LEFT JOIN (SELECT member_id,date_trunc('month',month)::date month,SUM(amount) month_paid FROM contributions GROUP BY member_id,date_trunc('month',month)::date)c ON c.member_id=m.id AND c.month=date_trunc('month',CURRENT_DATE)::date WHERE m.active`);s.json({members:+members,overdueLoans:+overdue,arrears:+arrears,...n})});
-app.get('/api/members',async(r,s)=>s.json(await q(`SELECT m.*,COALESCE(SUM(c.amount),0)::numeric contributions,COALESCE(SUM(c.units),0)::numeric units FROM members m LEFT JOIN contributions c ON c.member_id=m.id WHERE m.active GROUP BY m.id ORDER BY m.name`)));
-app.get('/api/members/:id',async(r,s)=>{const member=(await q('SELECT * FROM members WHERE id=$1',[r.params.id]))[0];if(!member)return s.status(404).json({error:'Member not found'});const [contrib,loans,tx]=await Promise.all([q('SELECT * FROM contributions WHERE member_id=$1 ORDER BY contribution_date DESC',[r.params.id]),q("SELECT *,GREATEST(principal-paid,0)::numeric outstanding,CASE WHEN due_date IS NOT NULL AND due_date<CURRENT_DATE AND status!='PAID' THEN true ELSE false END overdue FROM loans WHERE member_id=$1 ORDER BY issued_date DESC",[r.params.id]),q('SELECT * FROM transactions WHERE member_id=$1 ORDER BY tx_date DESC,id DESC',[r.params.id])]);const n=await nav();const units=contrib.reduce((a,x)=>a+(+x.units||0),0);const totalUnits=n.totalUnits; s.json({member,contributions:contrib,loans,transactions:tx,units,ownershipPct:totalUnits?units/totalUnits*100:0,ownershipValue:units*n.unitPrice,totalDebt:loans.reduce((a,x)=>a+(+x.outstanding||0),0)});});
-app.post('/api/members',auth,async(r,s)=>{const {name,phone,email,expected_monthly}=r.body;if(!name)return s.status(400).json({error:'Name required'});const x=(await q('INSERT INTO members(name,phone,email,expected_monthly) VALUES($1,$2,$3,$4) RETURNING *',[name,phone||'',email||'',+expected_monthly||0]))[0];await audit(r,'CREATE','member',x.id,x);s.status(201).json(x)});
-app.patch('/api/members/:id',auth,async(r,s)=>{const {name,phone,email,expected_monthly,active}=r.body;const x=(await q('UPDATE members SET name=COALESCE($1,name),phone=COALESCE($2,phone),email=COALESCE($3,email),expected_monthly=COALESCE($4,expected_monthly),active=COALESCE($5,active) WHERE id=$6 RETURNING *',[name,phone,email,expected_monthly==null?null:+expected_monthly,active,r.params.id]))[0];if(!x)return s.status(404).json({error:'Member not found'});await audit(r,'UPDATE','member',x.id,r.body);s.json(x)});
-app.get('/api/contributions',async(r,s)=>s.json(await q('SELECT c.*,m.name member_name FROM contributions c JOIN members m ON m.id=c.member_id ORDER BY contribution_date DESC,id DESC')));
-app.post('/api/contributions',auth,async(r,s)=>{const {member_id,amount,month,notes}=r.body;if(!member_id||!amount||+amount<=0)return s.status(400).json({error:'Member and positive amount required'});const n=await nav(),price=n.unitPrice||1,units=+amount/price,client=await pool.connect();try{await client.query('BEGIN');const c=(await client.query('INSERT INTO contributions(member_id,amount,month,notes,units,unit_price) VALUES($1,$2,$3,$4,$5,$6) RETURNING *',[member_id,+amount,month||new Date(),notes||'',units,price])).rows[0];await client.query("INSERT INTO transactions(kind,amount,member_id,reference,notes) VALUES('CONTRIBUTION',$1,$2,$3,$4)",[amount,member_id,'CONTR-'+c.id,notes||'']);await client.query('COMMIT');await audit(r,'CREATE','contribution',c.id,c);s.status(201).json(c)}catch(e){await client.query('ROLLBACK');s.status(500).json({error:e.message})}finally{client.release()}});
-app.get('/api/arrears',async(r,s)=>s.json(await q(`SELECT m.id,m.name,m.expected_monthly,COALESCE(c.month_paid,0)::numeric month_paid,GREATEST(m.expected_monthly-COALESCE(c.month_paid,0),0)::numeric arrears FROM members m LEFT JOIN (SELECT member_id,SUM(amount) month_paid FROM contributions WHERE month=date_trunc('month',CURRENT_DATE)::date GROUP BY member_id)c ON c.member_id=m.id WHERE m.active ORDER BY arrears DESC,m.name`)));
-app.get('/api/loans',async(r,s)=>s.json(await q("SELECT l.*,m.name member_name,GREATEST(l.principal-l.paid,0)::numeric outstanding,CASE WHEN l.due_date IS NOT NULL AND l.due_date<CURRENT_DATE AND l.status!='PAID' THEN 'OVERDUE' ELSE l.status END display_status FROM loans l JOIN members m ON m.id=l.member_id ORDER BY issued_date DESC,id DESC")));
-app.post('/api/loans',auth,async(r,s)=>{const {member_id,principal,interest_rate,due_date}=r.body;if(!member_id||!principal||+principal<=0)return s.status(400).json({error:'Member and positive principal required'});const client=await pool.connect();try{await client.query('BEGIN');const x=(await client.query('INSERT INTO loans(member_id,principal,interest_rate,due_date) VALUES($1,$2,$3,$4) RETURNING *',[member_id,+principal,+interest_rate||10,due_date||null])).rows[0];await client.query("INSERT INTO transactions(kind,amount,member_id,reference) VALUES('LOAN_DISBURSEMENT',$1,$2,$3)",[principal,member_id,'LOAN-'+x.id]);await client.query('COMMIT');await audit(r,'CREATE','loan',x.id,x);s.status(201).json(x)}catch(e){await client.query('ROLLBACK');s.status(500).json({error:e.message})}finally{client.release()}});
-app.post('/api/loans/:id/repay',auth,async(r,s)=>{const amount=+r.body.amount;if(!amount||amount<=0)return s.status(400).json({error:'Positive amount required'});const old=(await q('SELECT * FROM loans WHERE id=$1',[r.params.id]))[0];if(!old)return s.status(404).json({error:'Loan not found'});const actual=Math.min(amount,Math.max(+old.principal-+old.paid,0));const x=(await q("UPDATE loans SET paid=paid+$1,status=CASE WHEN paid+$1>=principal THEN 'PAID' ELSE 'ACTIVE' END WHERE id=$2 RETURNING *",[actual,r.params.id]))[0];await q("INSERT INTO transactions(kind,amount,member_id,reference) VALUES('LOAN_REPAYMENT',$1,$2,$3)",[actual,x.member_id,'LOAN-'+x.id]);await audit(r,'CREATE','loan_repayment',x.id,{amount:actual});s.json(x)});
-app.get('/api/investments',async(r,s)=>s.json(await q('SELECT *, (current_value-cost)::numeric gain FROM investments ORDER BY current_value DESC')));
-app.post('/api/investments',auth,async(r,s)=>{const {name,type,quantity,cost,current_value,notes}=r.body;if(!name||!type)return s.status(400).json({error:'Name and type required'});const x=(await q('INSERT INTO investments(name,type,quantity,cost,current_value,notes) VALUES($1,$2,$3,$4,$5,$6) RETURNING *',[name,type,+quantity||0,+cost||0,+current_value||0,notes||'']))[0];await q("INSERT INTO transactions(kind,amount,reference,notes) VALUES('INVESTMENT_PURCHASE',$1,$2,$3)",[+cost||0,'INV-'+x.id,notes||'']);await audit(r,'CREATE','investment',x.id,x);s.status(201).json(x)});
-app.post('/api/investments/:id/value',auth,async(r,s)=>{const value=+r.body.current_value;if(value<0)return s.status(400).json({error:'Value cannot be negative'});const x=(await q('UPDATE investments SET current_value=$1 WHERE id=$2 RETURNING *',[value,r.params.id]))[0];if(!x)return s.status(404).json({error:'Investment not found'});await audit(r,'UPDATE','investment_value',x.id,{current_value:value});s.json(x)});
-app.get('/api/ownership',async(r,s)=>{const n=await nav();return s.json(await q(`SELECT m.id,m.name,COALESCE(SUM(c.units),0)::numeric units,CASE WHEN $1=0 THEN 0 ELSE COALESCE(SUM(c.units),0)/$1*100 END::numeric ownership_pct,COALESCE(SUM(c.units),0)*$2::numeric ownership_value FROM members m LEFT JOIN contributions c ON c.member_id=m.id WHERE m.active GROUP BY m.id ORDER BY ownership_pct DESC`,[n.totalUnits,n.unitPrice]))});
-app.get('/api/transactions',async(r,s)=>s.json(await q('SELECT t.*,m.name member_name FROM transactions t LEFT JOIN members m ON m.id=t.member_id ORDER BY tx_date DESC,id DESC')));
-app.get('/api/audit',auth,async(r,s)=>s.json(await q('SELECT a.*,u.email FROM audit_log a JOIN users u ON u.id=a.user_id ORDER BY created_at DESC LIMIT 200')));
-app.get('/api/export/transactions',auth,async(r,s)=>{const rows=await q('SELECT t.id,t.tx_date,t.kind,m.name member,t.amount,t.reference,t.notes FROM transactions t LEFT JOIN members m ON m.id=t.member_id ORDER BY tx_date,id');const esc=v=>'"'+String(v??'').replace(/"/g,'""')+'"';const csv=[Object.keys(rows[0]||{id:1,tx_date:'',kind:'',member:'',amount:'',reference:'',notes:''}).join(','),...rows.map(x=>Object.values(x).map(esc).join(','))].join('\n');s.setHeader('Content-Type','text/csv');s.setHeader('Content-Disposition','attachment; filename="kirathimo-transactions.csv"');s.send(csv)});
-app.use(express.static(path.join(__dirname,'../frontend')));app.get('*',(r,s)=>s.sendFile(path.join(__dirname,'../frontend/index.html')));
-init().then(()=>app.listen(process.env.PORT||3000,()=>console.log('Kirathimo v3 running'))).catch(e=>{console.error(e);process.exit(1)});
+
+function requireAuth(req, res, next) {
+  const header = req.headers.authorization || "";
+
+  if (!header.startsWith("Bearer ")) {
+    return res.status(401).json({
+      error: "Authentication required"
+    });
+  }
+
+  const token = header.substring(7);
+
+  try {
+    req.user = jwt.verify(token, JWT_SECRET);
+    next();
+  } catch {
+    return res.status(401).json({
+      error: "Invalid or expired token"
+    });
+  }
+}
+
+function requireAdmin(req, res, next) {
+  if (!req.user || req.user.role !== "ADMIN") {
+    return res.status(403).json({
+      error: "Administrator access required"
+    });
+  }
+
+  next();
+}
+
+// --------------------------------------------------
+// HEALTH
+// --------------------------------------------------
+
+app.get("/api/health", async (req, res) => {
+  try {
+    await pool.query("SELECT 1");
+
+    res.json({
+      ok: true,
+      service: "Kirathimo Family Investment Group",
+      database: "connected"
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      ok: false,
+      database: "error"
+    });
+  }
+});
+
+// --------------------------------------------------
+// LOGIN
+// --------------------------------------------------
+
+app.post("/api/auth/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        error: "Email and password are required"
+      });
+    }
+
+    const result = await pool.query(
+      `SELECT id, email, password_hash, role, member_id
+       FROM users
+       WHERE LOWER(email) = LOWER($1)`,
+      [email]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(401).json({
+        error: "Invalid email or password"
+      });
+    }
+
+    const user = result.rows[0];
+
+    const valid = await bcrypt.compare(
+      password,
+      user.password_hash
+    );
+
+    if (!valid) {
+      return res.status(401).json({
+        error: "Invalid email or password"
+      });
+    }
+
+    const token = createToken(user);
+
+    await pool.query(
+      `INSERT INTO audit_logs(user_id, action, entity_type, details)
+       VALUES($1, 'LOGIN', 'USER', $2)`,
+      [user.id, `User ${user.email} logged in`]
+    );
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        member_id: user.member_id
+      }
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      error: "Login failed"
+    });
+  }
+});
+
+// --------------------------------------------------
+// NAV CALCULATION
+// --------------------------------------------------
+
+async function calculateNAV() {
+  const contributions = await pool.query(`
+    SELECT COALESCE(SUM(amount), 0) AS total
+    FROM contributions
+  `);
+
+  const loans = await pool.query(`
+    SELECT COALESCE(
+      SUM(GREATEST(principal - principal_paid, 0)),
+      0
+    ) AS total
+    FROM loans
+    WHERE status <> 'WRITTEN_OFF'
+  `);
+
+  const investments = await pool.query(`
+    SELECT COALESCE(SUM(current_value), 0) AS total
+    FROM investments
+  `);
+
+  const transactions = await pool.query(`
+    SELECT
+      COALESCE(
+        SUM(
+          CASE
+            WHEN transaction_type IN (
+              'CONTRIBUTION',
+              'LOAN_REPAYMENT',
+              'OTHER_INCOME'
+            )
+            THEN amount
+
+            WHEN transaction_type IN (
+              'INVESTMENT_PURCHASE',
+              'LOAN_ISSUED',
+              'OTHER_EXPENSE'
+            )
+            THEN -amount
+
+            ELSE 0
+          END
+        ),
+        0
+      ) AS cash
+    FROM transactions
+  `);
+
+  const units = await pool.query(`
+    SELECT COALESCE(SUM(units), 0) AS total
+    FROM contributions
+  `);
+
+  const totalContributions =
+    Number(contributions.rows[0].total || 0);
+
+  const outstandingLoans =
+    Number(loans.rows[0].total || 0);
+
+  const investmentValue =
+    Number(investments.rows[0].total || 0);
+
+  const cash =
+    Number(transactions.rows[0].cash || 0);
+
+  const totalUnits =
+    Number(units.rows[0].total || 0);
+
+  const nav =
+    cash +
+    investmentValue +
+    outstandingLoans;
+
+  const unitPrice =
+    totalUnits > 0
+      ? nav / totalUnits
+      : 1;
+
+  return {
+    nav,
+    totalUnits,
+    unitPrice,
+    cash,
+    investmentValue,
+    outstandingLoans,
+    totalContributions
+  };
+}
+
+app.get("/api/nav", async (req, res) => {
+  try {
+    const nav = await calculateNAV();
+
+    res.json(nav);
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      error: "Unable to calculate NAV"
+    });
+  }
+});
+
+// --------------------------------------------------
+// DASHBOARD
+// --------------------------------------------------
+
+app.get("/api/dashboard", async (req, res) => {
+  try {
+    const nav = await calculateNAV();
+
+    const members = await pool.query(`
+      SELECT COUNT(*) AS count
+      FROM members
+      WHERE active = TRUE
+    `);
+
+    const investments = await pool.query(`
+      SELECT COUNT(*) AS count
+      FROM investments
+    `);
+
+    const loans = await pool.query(`
+      SELECT COUNT(*) AS count
+      FROM loans
+      WHERE status = 'ACTIVE'
+    `);
+
+    res.json({
+      ...nav,
+      activeMembers: Number(members.rows[0].count),
+      investments: Number(investments.rows[0].count),
+      activeLoans: Number(loans.rows[0].count)
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      error: "Unable to load dashboard"
+    });
+  }
+});
+
+// --------------------------------------------------
+// MEMBERS
+// --------------------------------------------------
+
+app.get("/api/members", async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        m.*,
+        COALESCE(c.total_contributed, 0) AS total_contributed,
+        COALESCE(c.total_units, 0) AS total_units,
+        COALESCE(l.loan_balance, 0) AS loan_balance
+      FROM members m
+
+      LEFT JOIN (
+        SELECT
+          member_id,
+          SUM(amount) AS total_contributed,
+          SUM(units) AS total_units
+        FROM contributions
+        GROUP BY member_id
+      ) c ON c.member_id = m.id
+
+      LEFT JOIN (
+        SELECT
+          member_id,
+          SUM(GREATEST(principal - principal_paid, 0))
+            AS loan_balance
+        FROM loans
+        WHERE status <> 'WRITTEN_OFF'
+        GROUP BY member_id
+      ) l ON l.member_id = m.id
+
+      ORDER BY m.name
+    `);
+
+    const nav = await calculateNAV();
+
+    const members = result.rows.map(member => {
+      const units = Number(member.total_units || 0);
+
+      return {
+        ...member,
+        total_contributed: Number(member.total_contributed || 0),
+        total_units: units,
+        loan_balance: Number(member.loan_balance || 0),
+        ownership_percent:
+          nav.totalUnits > 0
+            ? (units / nav.totalUnits) * 100
+            : 0,
+        ownership_value:
+          units * nav.unitPrice
+      };
+    });
+
+    res.json(members);
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      error: "Unable to load members"
+    });
+  }
+});
+
+app.get("/api/members/:id", async (req, res) => {
+  try {
+    const memberId = Number(req.params.id);
+
+    const memberResult = await pool.query(
+      `SELECT * FROM members WHERE id = $1`,
+      [memberId]
+    );
+
+    if (memberResult.rowCount === 0) {
+      return res.status(404).json({
+        error: "Member not found"
+      });
+    }
+
+    const member = memberResult.rows[0];
+
+    const contributions = await pool.query(
+      `SELECT *
+       FROM contributions
+       WHERE member_id = $1
+       ORDER BY contribution_date DESC, id DESC`,
+      [memberId]
+    );
+
+    const loans = await pool.query(
+      `SELECT *
+       FROM loans
+       WHERE member_id = $1
+       ORDER BY issued_date DESC, id DESC`,
+      [memberId]
+    );
+
+    const transactions = await pool.query(
+      `SELECT *
+       FROM transactions
+       WHERE member_id = $1
+       ORDER BY transaction_date DESC, id DESC`,
+      [memberId]
+    );
+
+    const nav = await calculateNAV();
+
+    const totalContributed =
+      contributions.rows.reduce(
+        (sum, row) => sum + Number(row.amount || 0),
+        0
+      );
+
+    const totalUnits =
+      contributions.rows.reduce(
+        (sum, row) => sum + Number(row.units || 0),
+        0
+      );
+
+    const loanBalance =
+      loans.rows.reduce(
+        (sum, row) =>
+          sum +
+          Math.max(
+            Number(row.principal || 0) -
+              Number(row.principal_paid || 0),
+            0
+          ),
+        0
+      );
+
+    res.json({
+      member,
+      contributions: contributions.rows,
+      loans: loans.rows,
+      transactions: transactions.rows,
+      summary: {
+        totalContributed,
+        totalUnits,
+        ownershipPercent:
+          nav.totalUnits > 0
+            ? (totalUnits / nav.totalUnits) * 100
+            : 0,
+        ownershipValue:
+          totalUnits * nav.unitPrice,
+        loanBalance
+      }
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      error: "Unable to load member"
+    });
+  }
+});
+
+app.post(
+  "/api/members",
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const {
+        name,
+        phone,
+        email,
+        joined_date,
+        expected_monthly
+      } = req.body;
+
+      if (!name) {
+        return res.status(400).json({
+          error: "Name is required"
+        });
+      }
+
+      const result = await pool.query(
+        `INSERT INTO members
+          (name, phone, email, joined_date, expected_monthly)
+         VALUES($1, $2, $3, COALESCE($4, CURRENT_DATE), $5)
+         RETURNING *`,
+        [
+          name,
+          phone || null,
+          email || null,
+          joined_date || null,
+          Number(expected_monthly || 0)
+        ]
+      );
+
+      const member = result.rows[0];
+
+      await pool.query(
+        `INSERT INTO audit_logs
+          (user_id, action, entity_type, entity_id, details)
+         VALUES($1, 'CREATE', 'MEMBER', $2, $3)`,
+        [
+          req.user.id,
+          member.id,
+          `Created member ${member.name}`
+        ]
+      );
+
+      res.status(201).json(member);
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
+        error: "Unable to create member"
+      });
+    }
+  }
+);
+
+// --------------------------------------------------
+// CONTRIBUTIONS
+// --------------------------------------------------
+
+app.get("/api/contributions", async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        c.*,
+        m.name AS member_name
+      FROM contributions c
+      JOIN members m ON m.id = c.member_id
+      ORDER BY c.contribution_date DESC, c.id DESC
+    `);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      error: "Unable to load contributions"
+    });
+  }
+});
+
+app.post(
+  "/api/contributions",
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const {
+        member_id,
+        amount,
+        contribution_date,
+        month_for,
+        notes
+      } = req.body;
+
+      if (!member_id || !amount || Number(amount) <= 0) {
+        return res.status(400).json({
+          error: "Valid member and amount are required"
+        });
+      }
+
+      const nav = await calculateNAV();
+
+      const unitPrice =
+        nav.totalUnits > 0
+          ? nav.unitPrice
+          : 1;
+
+      const units =
+        Number(amount) / unitPrice;
+
+      const contribution = await pool.query(
+        `INSERT INTO contributions
+          (member_id, amount, units, unit_price,
+           contribution_date, month_for, notes)
+         VALUES($1, $2, $3, $4,
+           COALESCE($5, CURRENT_DATE),
+           $6, $7)
+         RETURNING *`,
+        [
+          member_id,
+          Number(amount),
+          units,
+          unitPrice,
+          contribution_date || null,
+          month_for || null,
+          notes || null
+        ]
+      );
+
+      const contributionId =
+        contribution.rows[0].id;
+
+      await pool.query(
+        `INSERT INTO transactions
+          (member_id, transaction_type, amount,
+           description, reference_id, transaction_date)
+         VALUES($1, 'CONTRIBUTION', $2, $3, $4,
+           COALESCE($5, CURRENT_DATE))`,
+        [
+          member_id,
+          Number(amount),
+          "Member contribution",
+          contributionId,
+          contribution_date || null
+        ]
+      );
+
+      await pool.query(
+        `INSERT INTO audit_logs
+          (user_id, action, entity_type, entity_id, details)
+         VALUES($1, 'CREATE', 'CONTRIBUTION', $2, $3)`,
+        [
+          req.user.id,
+          contributionId,
+          `Recorded contribution of ${amount}`
+        ]
+      );
+
+      res.status(201).json(contribution.rows[0]);
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
+        error: "Unable to record contribution"
+      });
+    }
+  }
+);
+
+// --------------------------------------------------
+// LOANS
+// --------------------------------------------------
+
+app.get("/api/loans", async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        l.*,
+        m.name AS member_name,
+        GREATEST(l.principal - l.principal_paid, 0)
+          AS outstanding
+      FROM loans l
+      JOIN members m ON m.id = l.member_id
+      ORDER BY l.issued_date DESC, l.id DESC
+    `);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      error: "Unable to load loans"
+    });
+  }
+});
+
+app.post(
+  "/api/loans",
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const {
+        member_id,
+        principal,
+        interest_rate,
+        issued_date,
+        due_date,
+        notes
+      } = req.body;
+
+      if (!member_id || !principal || Number(principal) <= 0) {
+        return res.status(400).json({
+          error: "Valid member and principal are required"
+        });
+      }
+
+      const result = await pool.query(
+        `INSERT INTO loans
+          (member_id, principal, interest_rate,
+           issued_date, due_date, notes)
+         VALUES($1, $2, $3,
+           COALESCE($4, CURRENT_DATE),
+           $5, $6)
+         RETURNING *`,
+        [
+          member_id,
+          Number(principal),
+          Number(interest_rate || 0),
+          issued_date || null,
+          due_date || null,
+          notes || null
+        ]
+      );
+
+      const loan = result.rows[0];
+
+      await pool.query(
+        `INSERT INTO transactions
+          (member_id, transaction_type, amount,
+           description, reference_id, transaction_date)
+         VALUES($1, 'LOAN_ISSUED', $2, $3, $4,
+           COALESCE($5, CURRENT_DATE))`,
+        [
+          member_id,
+          Number(principal),
+          "Loan issued",
+          loan.id,
+          issued_date || null
+        ]
+      );
+
+      await pool.query(
+        `INSERT INTO audit_logs
+          (user_id, action, entity_type, entity_id, details)
+         VALUES($1, 'CREATE', 'LOAN', $2, $3)`,
+        [
+          req.user.id,
+          loan.id,
+          `Issued loan of ${principal}`
+        ]
+      );
+
+      res.status(201).json(loan);
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
+        error: "Unable to create loan"
+      });
+    }
+  }
+);
+
+app.post(
+  "/api/loans/:id/repay",
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const loanId = Number(req.params.id);
+      const amount = Number(req.body.amount);
+
+      if (!amount || amount <= 0) {
+        return res.status(400).json({
+          error: "Valid repayment amount is required"
+        });
+      }
+
+      const loanResult = await pool.query(
+        `SELECT *
+         FROM loans
+         WHERE id = $1`,
+        [loanId]
+      );
+
+      if (loanResult.rowCount === 0) {
+        return res.status(404).json({
+          error: "Loan not found"
+        });
+      }
+
+      const loan = loanResult.rows[0];
+
+      const outstanding = Math.max(
+        Number(loan.principal) -
+          Number(loan.principal_paid),
+        0
+      );
+
+      if (outstanding <= 0) {
+        return res.status(400).json({
+          error: "This loan is already fully repaid"
+        });
+      }
+
+      const repayment = Math.min(
+        amount,
+        outstanding
+      );
+
+      const newPrincipalPaid =
+        Number(loan.principal_paid) +
+        repayment;
+
+      const newStatus =
+        newPrincipalPaid >= Number(loan.principal)
+          ? "PAID"
+          : "ACTIVE";
+
+      await pool.query(
+        `UPDATE loans
+         SET principal_paid = $1,
+             status = $2
+         WHERE id = $3`,
+        [
+          newPrincipalPaid,
+          newStatus,
+          loanId
+        ]
+      );
+
+      const repaymentResult = await pool.query(
+        `INSERT INTO loan_repayments
+          (loan_id, amount, repayment_date, notes)
+         VALUES($1, $2, COALESCE($3, CURRENT_DATE), $4)
+         RETURNING *`,
+        [
+          loanId,
+          repayment,
+          req.body.repayment_date || null,
+          req.body.notes || null
+        ]
+      );
+
+      await pool.query(
+        `INSERT INTO transactions
+          (member_id, transaction_type, amount,
+           description, reference_id, transaction_date)
+         VALUES($1, 'LOAN_REPAYMENT', $2, $3, $4,
+           COALESCE($5, CURRENT_DATE))`,
+        [
+          loan.member_id,
+          repayment,
+          "Loan repayment",
+          loanId,
+          req.body.repayment_date || null
+        ]
+      );
+
+      await pool.query(
+        `INSERT INTO audit_logs
+          (user_id, action, entity_type, entity_id, details)
+         VALUES($1, 'CREATE', 'LOAN_REPAYMENT', $2, $3)`,
+        [
+          req.user.id,
+          loanId,
+          `Recorded repayment of ${repayment}`
+        ]
+      );
+
+      res.status(201).json({
+        repayment: repaymentResult.rows[0],
+        remaining:
+          Number(loan.principal) -
+          newPrincipalPaid
+      });
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
+        error: "Unable to record repayment"
+      });
+    }
+  }
+);
+
+// --------------------------------------------------
+// INVESTMENTS
+// --------------------------------------------------
+
+app.get("/api/investments", async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT *
+      FROM investments
+      ORDER BY current_value DESC, name
+    `);
+
+    const investments = result.rows.map(i => ({
+      ...i,
+      gain:
+        Number(i.current_value || 0) -
+        Number(i.purchase_price || 0),
+      gain_percent:
+        Number(i.purchase_price || 0) > 0
+          ? (
+              (
+                Number(i.current_value || 0) -
+                Number(i.purchase_price || 0)
+              ) /
+              Number(i.purchase_price)
+            ) * 100
+          : 0
+    }));
+
+    res.json(investments);
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      error: "Unable to load investments"
+    });
+  }
+});
+
+app.post(
+  "/api/investments",
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const {
+        name,
+        type,
+        units,
+        purchase_price,
+        current_value,
+        purchase_date,
+        notes
+      } = req.body;
+
+      if (!name) {
+        return res.status(400).json({
+          error: "Investment name is required"
+        });
+      }
+
+      const purchase =
+        Number(purchase_price || 0);
+
+      const current =
+        Number(
+          current_value !== undefined
+            ? current_value
+            : purchase
+        );
+
+      const result = await pool.query(
+        `INSERT INTO investments
+          (name, type, units, purchase_price,
+           current_value, purchase_date, notes)
+         VALUES($1, $2, $3, $4, $5,
+           COALESCE($6, CURRENT_DATE), $7)
+         RETURNING *`,
+        [
+          name,
+          type || "OTHER",
+          Number(units || 0),
+          purchase,
+          current,
+          purchase_date || null,
+          notes || null
+        ]
+      );
+
+      const investment = result.rows[0];
+
+      await pool.query(
+        `INSERT INTO transactions
+          (transaction_type, amount, description,
+           reference_id, transaction_date)
+         VALUES(
+           'INVESTMENT_PURCHASE',
+           $1,
+           $2,
+           $3,
+           COALESCE($4, CURRENT_DATE)
+         )`,
+        [
+          purchase,
+          `Investment purchase: ${name}`,
+          investment.id,
+          purchase_date || null
+        ]
+      );
+
+      await pool.query(
+        `INSERT INTO investment_values
+          (investment_id, value, value_date)
+         VALUES($1, $2, COALESCE($3, CURRENT_DATE))`,
+        [
+          investment.id,
+          current,
+          purchase_date || null
+        ]
+      );
+
+      await pool.query(
+        `INSERT INTO audit_logs
+          (user_id, action, entity_type, entity_id, details)
+         VALUES($1, 'CREATE', 'INVESTMENT', $2, $3)`,
+        [
+          req.user.id,
+          investment.id,
+          `Created investment ${name}`
+        ]
+      );
+
+      res.status(201).json(investment);
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
+        error: "Unable to create investment"
+      });
+    }
+  }
+);
+
+app.post(
+  "/api/investments/:id/value",
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const investmentId =
+        Number(req.params.id);
+
+      const value =
+        Number(req.body.value);
+
+      if (!Number.isFinite(value) || value < 0) {
+        return res.status(400).json({
+          error: "Valid value is required"
+        });
+      }
+
+      const result = await pool.query(
+        `UPDATE investments
+         SET current_value = $1
+         WHERE id = $2
+         RETURNING *`,
+        [value, investmentId]
+      );
+
+      if (result.rowCount === 0) {
+        return res.status(404).json({
+          error: "Investment not found"
+        });
+      }
+
+      await pool.query(
+        `INSERT INTO investment_values
+          (investment_id, value, value_date)
+         VALUES($1, $2, COALESCE($3, CURRENT_DATE))`,
+        [
+          investmentId,
+          value,
+          req.body.value_date || null
+        ]
+      );
+
+      await pool.query(
+        `INSERT INTO audit_logs
+          (user_id, action, entity_type, entity_id, details)
+         VALUES($1, 'UPDATE_VALUE', 'INVESTMENT', $2, $3)`,
+        [
+          req.user.id,
+          investmentId,
+          `Updated investment value to ${value}`
+        ]
+      );
+
+      res.json(result.rows[0]);
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
+        error: "Unable to update investment value"
+      });
+    }
+  }
+);
+
+// --------------------------------------------------
+// OWNERSHIP
+// --------------------------------------------------
+
+app.get("/api/ownership", async (req, res) => {
+  try {
+    const nav = await calculateNAV();
+
+    const result = await pool.query(`
+      SELECT
+        m.id,
+        m.name,
+        COALESCE(SUM(c.units), 0) AS units
+      FROM members m
+      LEFT JOIN contributions c
+        ON c.member_id = m.id
+      WHERE m.active = TRUE
+      GROUP BY m.id, m.name
+      ORDER BY units DESC, m.name
+    `);
+
+    const ownership = result.rows.map(row => {
+      const units = Number(row.units || 0);
+
+      return {
+        id: row.id,
+        name: row.name,
+        units,
+        ownership_percent:
+          nav.totalUnits > 0
+            ? (units / nav.totalUnits) * 100
+            : 0,
+        value:
+          units * nav.unitPrice
+      };
+    });
+
+    res.json({
+      nav,
+      ownership
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      error: "Unable to load ownership"
+    });
+  }
+});
+
+// --------------------------------------------------
+// TRANSACTIONS
+// --------------------------------------------------
+
+app.get("/api/transactions", async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        t.*,
+        m.name AS member_name
+      FROM transactions t
+      LEFT JOIN members m
+        ON m.id = t.member_id
+      ORDER BY t.transaction_date DESC, t.id DESC
+    `);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      error: "Unable to load transactions"
+    });
+  }
+});
+
+// --------------------------------------------------
+// AUDIT LOG
+// --------------------------------------------------
+
+app.get(
+  "/api/audit",
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const result = await pool.query(`
+        SELECT
+          a.*,
+          u.email
+        FROM audit_logs a
+        LEFT JOIN users u
+          ON u.id = a.user_id
+        ORDER BY a.created_at DESC
+        LIMIT 500
+      `);
+
+      res.json(result.rows);
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
+        error: "Unable to load audit log"
+      });
+    }
+  }
+);
+
+// --------------------------------------------------
+// NAV SNAPSHOT
+// --------------------------------------------------
+
+app.post(
+  "/api/nav/snapshot",
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const nav = await calculateNAV();
+
+      const result = await pool.query(
+        `INSERT INTO nav_snapshots
+          (nav, units, unit_price, snapshot_date)
+         VALUES($1, $2, $3, COALESCE($4, CURRENT_DATE))
+         RETURNING *`,
+        [
+          nav.nav,
+          nav.totalUnits,
+          nav.unitPrice,
+          req.body.snapshot_date || null
+        ]
+      );
+
+      res.status(201).json(result.rows[0]);
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
+        error: "Unable to create NAV snapshot"
+      });
+    }
+  }
+);
+
+// --------------------------------------------------
+// STATIC FRONTEND
+// --------------------------------------------------
+
+// index.html is in the SAME directory as server.js
+app.use(express.static(__dirname));
+
+app.get("*", (req, res) => {
+  res.sendFile(
+    path.join(__dirname, "index.html")
+  );
+});
+
+// --------------------------------------------------
+// ERROR HANDLER
+// --------------------------------------------------
+
+app.use((error, req, res, next) => {
+  console.error(error);
+
+  res.status(500).json({
+    error: "Internal server error"
+  });
+});
+
+// --------------------------------------------------
+// START SERVER
+// --------------------------------------------------
+
+async function start() {
+  try {
+    await init();
+
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(
+        `Kirathimo server running on port ${PORT}`
+      );
+    });
+  } catch (error) {
+    console.error(
+      "Failed to start Kirathimo:",
+      error
+    );
+
+    process.exit(1);
+  }
+}
+
+start();
