@@ -1,40 +1,2164 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kirathimo Family Investment Group</title><style>
-:root{--bg:#f5f7fb;--card:#fff;--ink:#172033;--muted:#687386;--line:#e6e9ef;--accent:#1f6feb;--good:#16834b;--warn:#b45309;--danger:#c2410c}*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}header{background:#101828;color:white;padding:18px 24px;position:sticky;top:0;z-index:5}.head{max-width:1250px;margin:auto;display:flex;align-items:center;justify-content:space-between;gap:15px}.brand{font-weight:800;font-size:20px}.sub{font-size:12px;color:#b7c0cf;margin-top:3px}.status{font-size:12px}.wrap{max-width:1250px;margin:22px auto;padding:0 18px}.tabs{display:flex;gap:8px;overflow:auto;padding-bottom:10px}.tabs button,.btn{border:1px solid var(--line);background:var(--card);padding:10px 13px;border-radius:10px;cursor:pointer;color:var(--ink);white-space:nowrap}.tabs button.active,.btn.primary{background:var(--accent);color:white;border-color:var(--accent)}.btn.danger{background:#fff1f2;color:#b42318;border-color:#fecdd3}.panel{display:none}.panel.active{display:block}.hero{background:linear-gradient(135deg,#102a43,#1d4f73);color:white;padding:25px;border-radius:18px;margin-bottom:15px}.hero h1,.hero h2{margin:0 0 7px}.hero p{margin:0;color:#d9e6f2}.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}.grid2{display:grid;grid-template-columns:1fr 1.5fr;gap:15px}.card{background:var(--card);border:1px solid var(--line);border-radius:15px;padding:17px;margin-bottom:15px}.label{font-size:12px;color:var(--muted)}.big{font-size:23px;font-weight:800;margin-top:5px}.muted{color:var(--muted)}.good{color:var(--good)}.warn,.pill.warn{color:var(--warn)}.pill{font-weight:700;font-size:12px}.notice{background:#eef6ff;border:1px solid #cfe4ff;padding:12px;border-radius:12px;color:#24415f}.form{display:grid;gap:10px}.form input,.form select{width:100%;padding:11px;border:1px solid #d9dee8;border-radius:9px;font:inherit;background:white}button{font:inherit}.tablewrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:11px 9px;border-bottom:1px solid var(--line);white-space:nowrap}th{color:var(--muted);font-weight:700}.memberlink{color:var(--accent);font-weight:700;cursor:pointer}.back{margin-bottom:12px;border:0;background:none;color:var(--accent);cursor:pointer}.toast{position:fixed;right:18px;bottom:18px;background:#101828;color:#fff;padding:12px 15px;border-radius:10px;display:none;z-index:20}.login{max-width:430px;margin:60px auto}.login .card{box-shadow:0 10px 35px #10182812}.hidden{display:none!important}.top-actions{display:flex;gap:8px;align-items:center}.small{font-size:12px}@media(max-width:900px){.stats{grid-template-columns:repeat(2,1fr)}.grid2{grid-template-columns:1fr}}@media(max-width:500px){header{padding:14px}.wrap{padding:0 10px}.stats{grid-template-columns:1fr}.hero{padding:19px}.big{font-size:20px}}
-</style></head><body><header><div class="head"><div><div class="brand">Kirathimo</div><div class="sub">Family Investment Group · public read-only portal</div></div><div class="top-actions"><span id="status" class="status">● Connecting…</span><button id="loginBtn" class="btn">Admin login</button><button id="logoutBtn" class="btn hidden">Logout</button></div></div></header>
-<div class="wrap"><nav class="tabs"><button class="active" data-tab="overview">Overview</button><button data-tab="nav">NAV & Unit Price</button><button data-tab="members">Members & Debts</button><button data-tab="arrears">Arrears</button><button data-tab="contributions">Contributions</button><button data-tab="loans">Loans</button><button data-tab="investments">Investments</button><button data-tab="ownership">Ownership</button><button data-tab="transactions">Transactions</button><button id="auditTab" class="hidden" data-tab="audit">Audit Log</button></nav>
-<section id="overview" class="panel active"><div class="hero"><h1>Kirathimo Family Investment Group</h1><p>Track family contributions, units, loans, debts and investments in one place.</p></div><div id="stats" class="stats"></div><div class="grid2" style="margin-top:15px"><div class="card"><h2>Asset mix</h2><div id="mix"></div></div><div class="card"><h2>How units work</h2><p>Each contribution buys units at the group's NAV per unit at the time it is recorded. Your units determine your pro-rata share of the group's net assets.</p><div class="notice">The public portal is read-only. Only authenticated admins can change financial records.</div></div></div></section>
-<section id="nav" class="panel"><div class="hero"><h2>NAV & Unit Price</h2><p>Live net asset value and the current value of one Kirathimo unit.</p></div><div id="navbox" class="stats"></div><div class="card"><h3>Formula</h3><p><b>NAV = cash + investments + outstanding member loans − liabilities.</b> Current v3 tracks the first three components; a liability module can be added when Kirathimo needs it.</p></div></section>
-<section id="members" class="panel"><div class="card"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><div><h2>Members</h2><p class="muted">Open a member for their full statement.</p></div><button class="btn primary adminOnly hidden" onclick="openModal('memberModal')">+ Add member</button></div><div id="membersTable" class="tablewrap"></div></div></section>
-<section id="memberDetail" class="panel"><button class="back" onclick="showTab('members')">← Back to members</button><div id="memberDetailBox"></div></section>
-<section id="arrears" class="panel"><div class="card"><h2>Monthly arrears</h2><p class="muted">Based on each member's expected monthly contribution versus what they have paid this month.</p><div id="arrearsTable" class="tablewrap"></div></div></section>
-<section id="contributions" class="panel"><div class="grid2"><div class="card adminOnly hidden"><h2>Record contribution</h2><form class="form" id="contribForm"><select name="member_id" id="contribMember" required></select><input name="amount" type="number" step="0.01" placeholder="Amount (KSh)" required><input name="month" type="date"><input name="notes" placeholder="Notes"><button class="btn primary">Record contribution</button></form></div><div class="card"><h2>Contribution history</h2><div id="contribTable" class="tablewrap"></div></div></div></section>
-<section id="loans" class="panel"><div class="grid2"><div class="card adminOnly hidden"><h2>Issue member loan</h2><form class="form" id="loanForm"><select name="member_id" id="loanMember" required></select><input name="principal" type="number" placeholder="Principal (KSh)" required><input name="interest_rate" type="number" value="10" step="0.1"><input name="due_date" type="date"><button class="btn primary">Issue loan</button></form></div><div class="card"><h2>All loans & debts</h2><div id="loanTable" class="tablewrap"></div></div></div></section>
-<section id="investments" class="panel"><div class="grid2"><div class="card adminOnly hidden"><h2>Add investment</h2><form class="form" id="investmentForm"><input name="name" placeholder="e.g. Kenya Pipeline shares" required><select name="type"><option value="LISTED_SHARE">Listed shares</option><option value="MONEY_MARKET_FUND">Money market fund</option><option value="BOND">Bond</option><option value="OTHER">Other</option></select><input name="quantity" type="number" step="0.000001" placeholder="Quantity"><input name="cost" type="number" step="0.01" placeholder="Cost (KSh)"><input name="current_value" type="number" step="0.01" placeholder="Current value (KSh)"><input name="notes" placeholder="Notes"><button class="btn primary">Add investment</button></form></div><div class="card"><h2>Portfolio</h2><div id="investmentTable" class="tablewrap"></div></div></div></section>
-<section id="ownership" class="panel"><div class="card"><h2>Pro-rata ownership</h2><div id="ownershipTable" class="tablewrap"></div></div></section>
-<section id="transactions" class="panel"><div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><h2>Financial ledger</h2><p class="muted">Money moving into and out of the group.</p></div><button id="exportBtn" class="btn adminOnly hidden">Export CSV</button></div><div id="transactionTable" class="tablewrap"></div></div></section>
-<section id="audit" class="panel"><div class="card"><h2>Audit log</h2><p class="muted">Admin actions recorded for accountability.</p><div id="auditTable" class="tablewrap"></div></div></section>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kirathimo Family Investment Group</title>
+
+<style>
+:root{
+  --bg:#f5f7fb;
+  --card:#fff;
+  --ink:#172033;
+  --muted:#687386;
+  --line:#e6e9ef;
+  --accent:#1f6feb;
+  --good:#16834b;
+  --warn:#b45309;
+  --danger:#c2410c
+}
+
+*{box-sizing:border-box}
+
+body{
+  margin:0;
+  font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  background:var(--bg);
+  color:var(--ink)
+}
+
+header{
+  background:#101828;
+  color:white;
+  padding:18px 24px;
+  position:sticky;
+  top:0;
+  z-index:5
+}
+
+.head{
+  max-width:1250px;
+  margin:auto;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:15px
+}
+
+.brand{
+  font-weight:800;
+  font-size:20px
+}
+
+.sub{
+  font-size:12px;
+  color:#b7c0cf;
+  margin-top:3px
+}
+
+.status{
+  font-size:12px
+}
+
+.wrap{
+  max-width:1250px;
+  margin:22px auto;
+  padding:0 18px
+}
+
+.tabs{
+  display:flex;
+  gap:8px;
+  overflow:auto;
+  padding-bottom:10px
+}
+
+.tabs button,.btn{
+  border:1px solid var(--line);
+  background:var(--card);
+  padding:10px 13px;
+  border-radius:10px;
+  cursor:pointer;
+  color:var(--ink);
+  white-space:nowrap
+}
+
+.tabs button.active,.btn.primary{
+  background:var(--accent);
+  color:white;
+  border-color:var(--accent)
+}
+
+.btn.danger{
+  background:#fff1f2;
+  color:#b42318;
+  border-color:#fecdd3
+}
+
+.panel{
+  display:none
+}
+
+.panel.active{
+  display:block
+}
+
+.hero{
+  background:linear-gradient(135deg,#102a43,#1d4f73);
+  color:white;
+  padding:25px;
+  border-radius:18px;
+  margin-bottom:15px
+}
+
+.hero h1,.hero h2{
+  margin:0 0 7px
+}
+
+.hero p{
+  margin:0;
+  color:#d9e6f2
+}
+
+.stats{
+  display:grid;
+  grid-template-columns:repeat(5,1fr);
+  gap:12px
+}
+
+.grid2{
+  display:grid;
+  grid-template-columns:1fr 1.5fr;
+  gap:15px
+}
+
+.card{
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:15px;
+  padding:17px;
+  margin-bottom:15px
+}
+
+.label{
+  font-size:12px;
+  color:var(--muted)
+}
+
+.big{
+  font-size:23px;
+  font-weight:800;
+  margin-top:5px
+}
+
+.muted{
+  color:var(--muted)
+}
+
+.good{
+  color:var(--good)
+}
+
+.warn,.pill.warn{
+  color:var(--warn)
+}
+
+.pill{
+  font-weight:700;
+  font-size:12px
+}
+
+.notice{
+  background:#eef6ff;
+  border:1px solid #cfe4ff;
+  padding:12px;
+  border-radius:12px;
+  color:#24415f
+}
+
+.form{
+  display:grid;
+  gap:10px
+}
+
+.form input,.form select{
+  width:100%;
+  padding:11px;
+  border:1px solid #d9dee8;
+  border-radius:9px;
+  font:inherit;
+  background:white
+}
+
+button{
+  font:inherit
+}
+
+.tablewrap{
+  overflow:auto
+}
+
+table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:13px
+}
+
+th,td{
+  text-align:left;
+  padding:11px 9px;
+  border-bottom:1px solid var(--line);
+  white-space:nowrap
+}
+
+th{
+  color:var(--muted);
+  font-weight:700
+}
+
+.memberlink{
+  color:var(--accent);
+  font-weight:700;
+  cursor:pointer
+}
+
+.back{
+  margin-bottom:12px;
+  border:0;
+  background:none;
+  color:var(--accent);
+  cursor:pointer
+}
+
+.toast{
+  position:fixed;
+  right:18px;
+  bottom:18px;
+  background:#101828;
+  color:#fff;
+  padding:12px 15px;
+  border-radius:10px;
+  display:none;
+  z-index:20
+}
+
+.login{
+  max-width:430px;
+  margin:60px auto
+}
+
+.login .card{
+  box-shadow:0 10px 35px #10182812
+}
+
+.hidden{
+  display:none!important
+}
+
+.top-actions{
+  display:flex;
+  gap:8px;
+  align-items:center
+}
+
+.small{
+  font-size:12px
+}
+
+@media(max-width:900px){
+  .stats{
+    grid-template-columns:repeat(2,1fr)
+  }
+
+  .grid2{
+    grid-template-columns:1fr
+  }
+}
+
+@media(max-width:500px){
+  header{
+    padding:14px
+  }
+
+  .wrap{
+    padding:0 10px
+  }
+
+  .stats{
+    grid-template-columns:1fr
+  }
+
+  .hero{
+    padding:19px
+  }
+
+  .big{
+    font-size:20px
+  }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+  <div class="head">
+    <div>
+      <div class="brand">Kirathimo</div>
+      <div class="sub">Family Investment Group · public read-only portal</div>
+    </div>
+
+    <div class="top-actions">
+      <span id="status" class="status">● Connecting…</span>
+      <button id="loginBtn" class="btn">Admin login</button>
+      <button id="logoutBtn" class="btn hidden">Logout</button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<nav class="tabs">
+  <button class="active" data-tab="overview">Overview</button>
+  <button data-tab="nav">NAV & Unit Price</button>
+  <button data-tab="members">Members & Debts</button>
+  <button data-tab="arrears">Arrears</button>
+  <button data-tab="contributions">Contributions</button>
+  <button data-tab="loans">Loans</button>
+  <button data-tab="investments">Investments</button>
+  <button data-tab="ownership">Ownership</button>
+  <button data-tab="transactions">Transactions</button>
+  <button id="auditTab" class="hidden" data-tab="audit">Audit Log</button>
+</nav>
+
+
+<!-- OVERVIEW -->
+
+<section id="overview" class="panel active">
+
+  <div class="hero">
+    <h1>Kirathimo Family Investment Group</h1>
+    <p>Track family contributions, units, loans, debts and investments in one place.</p>
+  </div>
+
+  <div id="stats" class="stats"></div>
+
+  <div class="grid2" style="margin-top:15px">
+
+    <div class="card">
+      <h2>Asset mix</h2>
+      <div id="mix"></div>
+    </div>
+
+    <div class="card">
+      <h2>How units work</h2>
+
+      <p>
+        Each contribution buys units at the group's NAV per unit at the time it is recorded.
+        Your units determine your pro-rata share of the group's net assets.
+      </p>
+
+      <div class="notice">
+        The public portal is read-only.
+        Only authenticated admins can change financial records.
+      </div>
+    </div>
+
+  </div>
+
+</section>
+
+
+<!-- NAV -->
+
+<section id="nav" class="panel">
+
+  <div class="hero">
+    <h2>NAV & Unit Price</h2>
+    <p>Live net asset value and the current value of one Kirathimo unit.</p>
+  </div>
+
+  <div id="navbox" class="stats"></div>
+
+  <div class="card">
+    <h3>Formula</h3>
+
+    <p>
+      <b>
+        NAV = cash + investments + outstanding member loans − liabilities.
+      </b>
+    </p>
+
+    <p>
+      Current v3 tracks the first three components;
+      a liability module can be added when Kirathimo needs it.
+    </p>
+  </div>
+
+</section>
+
+
+<!-- MEMBERS -->
+
+<section id="members" class="panel">
+
+  <div class="card">
+
+    <div style="display:flex;justify-content:space-between;gap:10px;align-items:center">
+
+      <div>
+        <h2>Members</h2>
+        <p class="muted">Open a member for their full statement.</p>
+      </div>
+
+      <button
+        class="btn primary adminOnly hidden"
+        onclick="openModal('memberModal')">
+        + Add member
+      </button>
+
+    </div>
+
+    <div id="membersTable" class="tablewrap"></div>
+
+  </div>
+
+</section>
+
+
+<!-- MEMBER DETAIL -->
+
+<section id="memberDetail" class="panel">
+
+  <button class="back" onclick="showTab('members')">
+    ← Back to members
+  </button>
+
+  <div id="memberDetailBox"></div>
+
+</section>
+
+
+<!-- ARREARS -->
+
+<section id="arrears" class="panel">
+
+  <div class="card">
+
+    <h2>Monthly arrears</h2>
+
+    <p class="muted">
+      Based on each member's expected monthly contribution versus what they have paid this month.
+    </p>
+
+    <div id="arrearsTable" class="tablewrap"></div>
+
+  </div>
+
+</section>
+
+
+<!-- CONTRIBUTIONS -->
+
+<section id="contributions" class="panel">
+
+  <div class="grid2">
+
+    <div class="card adminOnly hidden">
+
+      <h2>Record contribution</h2>
+
+      <form class="form" id="contribForm">
+
+        <select name="member_id" id="contribMember" required>
+        </select>
+
+        <input
+          name="amount"
+          type="number"
+          step="0.01"
+          placeholder="Amount (KSh)"
+          required
+        >
+
+        <input
+          name="month"
+          type="date"
+        >
+
+        <input
+          name="notes"
+          placeholder="Notes"
+        >
+
+        <button class="btn primary">
+          Record contribution
+        </button>
+
+      </form>
+
+    </div>
+
+    <div class="card">
+
+      <h2>Contribution history</h2>
+
+      <div id="contribTable" class="tablewrap"></div>
+
+    </div>
+
+  </div>
+
+</section>
+
+
+<!-- LOANS -->
+
+<section id="loans" class="panel">
+
+  <div class="grid2">
+
+    <div class="card adminOnly hidden">
+
+      <h2>Issue member loan</h2>
+
+      <form class="form" id="loanForm">
+
+        <select name="member_id" id="loanMember" required>
+        </select>
+
+        <input
+          name="principal"
+          type="number"
+          placeholder="Principal (KSh)"
+          required
+        >
+
+        <input
+          name="interest_rate"
+          type="number"
+          value="10"
+          step="0.1"
+        >
+
+        <input
+          name="due_date"
+          type="date"
+        >
+
+        <button class="btn primary">
+          Issue loan
+        </button>
+
+      </form>
+
+    </div>
+
+    <div class="card">
+
+      <h2>All loans & debts</h2>
+
+      <div id="loanTable" class="tablewrap"></div>
+
+    </div>
+
+  </div>
+
+</section>
+
+
+<!-- INVESTMENTS -->
+
+<section id="investments" class="panel">
+
+  <div class="grid2">
+
+    <div class="card adminOnly hidden">
+
+      <h2>Add investment</h2>
+
+      <form class="form" id="investmentForm">
+
+        <input
+          name="name"
+          placeholder="e.g. Kenya Pipeline shares"
+          required
+        >
+
+        <select name="type">
+
+          <option value="LISTED_SHARE">
+            Listed shares
+          </option>
+
+          <option value="MONEY_MARKET_FUND">
+            Money market fund
+          </option>
+
+          <option value="BOND">
+            Bond
+          </option>
+
+          <option value="OTHER">
+            Other
+          </option>
+
+        </select>
+
+        <input
+          name="quantity"
+          type="number"
+          step="0.000001"
+          placeholder="Quantity"
+        >
+
+        <input
+          name="cost"
+          type="number"
+          step="0.01"
+          placeholder="Cost (KSh)"
+        >
+
+        <input
+          name="current_value"
+          type="number"
+          step="0.01"
+          placeholder="Current value (KSh)"
+        >
+
+        <input
+          name="notes"
+          placeholder="Notes"
+        >
+
+        <button class="btn primary">
+          Add investment
+        </button>
+
+      </form>
+
+    </div>
+
+    <div class="card">
+
+      <h2>Portfolio</h2>
+
+      <div id="investmentTable" class="tablewrap"></div>
+
+    </div>
+
+  </div>
+
+</section>
+
+
+<!-- OWNERSHIP -->
+
+<section id="ownership" class="panel">
+
+  <div class="card">
+
+    <h2>Pro-rata ownership</h2>
+
+    <div id="ownershipTable" class="tablewrap"></div>
+
+  </div>
+
+</section>
+
+
+<!-- TRANSACTIONS -->
+
+<section id="transactions" class="panel">
+
+  <div class="card">
+
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+
+      <div>
+
+        <h2>Financial ledger</h2>
+
+        <p class="muted">
+          Money moving into and out of the group.
+        </p>
+
+      </div>
+
+      <button id="exportBtn" class="btn adminOnly hidden">
+        Export CSV
+      </button>
+
+    </div>
+
+    <div id="transactionTable" class="tablewrap"></div>
+
+  </div>
+
+</section>
+
+
+<!-- AUDIT -->
+
+<section id="audit" class="panel">
+
+  <div class="card">
+
+    <h2>Audit log</h2>
+
+    <p class="muted">
+      Admin actions recorded for accountability.
+    </p>
+
+    <div id="auditTable" class="tablewrap"></div>
+
+  </div>
+
+</section>
+
 </div>
-<div id="loginModal" class="login hidden"><div class="card"><h2>Admin login</h2><p class="muted">Use the admin account configured for this deployment.</p><form id="loginForm" class="form"><input name="email" type="email" placeholder="Admin email" required><input name="password" type="password" placeholder="Password" required><button class="btn primary">Sign in</button></form><p id="loginError" class="warn"></p></div></div>
-<div id="memberModal" class="login hidden"><div class="card"><h2>Add member</h2><form id="memberForm" class="form"><input name="name" placeholder="Full name" required><input name="phone" placeholder="Phone"><input name="email" type="email" placeholder="Email"><input name="expected_monthly" type="number" step="0.01" placeholder="Expected monthly contribution (KSh)"><button class="btn primary">Create member</button><button type="button" class="btn" onclick="closeModal('memberModal')">Cancel</button></form></div></div>
-<div id="toast" class="toast"></div><script>
-const $=s=>document.querySelector(s),api='/api';let token=localStorage.getItem('kirathimo_token');const money=n=>'KSh '+Number(n||0).toLocaleString('en-KE',{minimumFractionDigits:2,maximumFractionDigits:2});
-async function get(u){const r=await fetch(api+u,{headers:token?{Authorization:'Bearer '+token}:{}});if(r.status===401&&token){logout();throw Error('Login expired')}if(!r.ok)throw Error((await r.json()).error||'Request failed');return r.json()}
-async function post(u,d){const r=await fetch(api+u,{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:JSON.stringify(d)});const x=await r.json();if(!r.ok)throw Error(x.error||'Request failed');return x}
-function table(h,rows){if(!rows.length)return '<p class="muted">No records yet.</p>';return '<table><thead><tr>'+h.map(x=>'<th>'+x+'</th>').join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+r.map(x=>'<td>'+x+'</td>').join('')+'</tr>').join('')+'</tbody></table>'}
-function showTab(id){document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('active',x.dataset.tab===id));document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));$('#'+id).classList.add('active')}
-document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));function openModal(id){$('#'+id).classList.remove('hidden')}function closeModal(id){$('#'+id).classList.add('hidden')}
-function setAdminUI(){document.querySelectorAll('.adminOnly').forEach(x=>x.classList.toggle('hidden',!token));$('#loginBtn').classList.toggle('hidden',!!token);$('#logoutBtn').classList.toggle('hidden',!token);$('#auditTab').classList.toggle('hidden',!token);}
-function toast(t){$('#toast').textContent=t;$('#toast').style.display='block';setTimeout(()=>$('#toast').style.display='none',2500)}
-function logout(){token=null;localStorage.removeItem('kirathimo_token');setAdminUI();showTab('overview');toast('Logged out')}
-$('#logoutBtn').onclick=logout;$('#loginBtn').onclick=()=>openModal('loginModal');
-$('#loginForm').onsubmit=async e=>{e.preventDefault();try{const d=Object.fromEntries(new FormData(e.target));const r=await post('/login',d);token=r.token;localStorage.setItem('kirathimo_token',token);closeModal('loginModal');setAdminUI();toast('Admin login successful');refresh()}catch(err){$('#loginError').textContent=err.message}};
-async function openMember(id){const d=await get('/members/'+id);showTab('memberDetail');$('#memberDetailBox').innerHTML='<div class="hero"><h2>'+d.member.name+'</h2><p>'+([d.member.phone,d.member.email].filter(Boolean).join(' · ')||'No contact details')+'</p></div><div class="stats"><div class="card"><div class="label">Contributed</div><div class="big">'+money(d.contributions.reduce((a,x)=>a+ +x.amount,0))+'</div></div><div class="card"><div class="label">Units</div><div class="big">'+Number(d.units).toLocaleString()+'</div></div><div class="card"><div class="label">Ownership</div><div class="big">'+d.ownershipPct.toFixed(2)+'%</div></div><div class="card"><div class="label">Ownership value</div><div class="big">'+money(d.ownershipValue)+'</div></div><div class="card"><div class="label">Total debt</div><div class="big">'+money(d.totalDebt)+'</div></div></div><div class="card"><h3>Loans & debts</h3>'+table(['Issued','Principal','Paid','Outstanding','Rate','Due','Status','Action'],d.loans.map(x=>[x.issued_date?.slice(0,10),money(x.principal),money(x.paid),money(x.outstanding),x.interest_rate+'%',x.due_date?.slice(0,10)||'—','<span class="pill '+(x.overdue?'warn':'')+'">'+(x.overdue?'OVERDUE':x.status)+'</span>',token&&+x.outstanding>0?'<button class="btn" onclick="repay('+x.id+')">Repay</button>':'—']))+'</div><div class="card"><h3>Contribution history</h3>'+table(['Date','Month','Amount','Units','Unit price'],d.contributions.map(x=>[x.contribution_date?.slice(0,10),x.month?.slice(0,10),money(x.amount),Number(x.units).toLocaleString(),Number(x.unit_price).toFixed(4)]))+'</div>'}
-async function repay(id){const amount=prompt('Repayment amount (KSh):');if(!amount)return;try{await post('/loans/'+id+'/repay',{amount:+amount});toast('Repayment recorded');openMember(id)}catch(e){toast(e.message)}}
-async function refresh(){try{const [dash,nav,members,contrib,loans,inv,own,tx,arr]=await Promise.all([get('/dashboard'),get('/nav'),get('/members'),get('/contributions'),get('/loans'),get('/investments'),get('/ownership'),get('/transactions'),get('/arrears')]);$('#status').textContent='● Live';$('#stats').innerHTML=[['Net assets',money(nav.netAssets)],['NAV / unit',money(nav.unitPrice)],['Active members',dash.members],['Investments',money(nav.investments)],['Loans outstanding',money(nav.loansReceivable)],['Monthly arrears',money(dash.arrears)]].map(x=>'<div class="card"><div class="label">'+x[0]+'</div><div class="big">'+x[1]+'</div></div>').join('');$('#navbox').innerHTML=[['Net asset value',money(nav.netAssets)],['Cash',money(nav.cash)],['Investments',money(nav.investments)],['Loans receivable',money(nav.loansReceivable)],['Total units',Number(nav.totalUnits).toLocaleString()],['Unit price',money(nav.unitPrice)]].map(x=>'<div class="card"><div class="label">'+x[0]+'</div><div class="big">'+x[1]+'</div></div>').join('');const types={};inv.forEach(x=>types[x.type]=(types[x.type]||0)+ +x.current_value);$('#mix').innerHTML=Object.entries(types).map(([k,v])=>'<p><b>'+k.replaceAll('_',' ')+'</b><br>'+money(v)+'</p>').join('')||'<p class="muted">No investments yet.</p>';const opts='<option value="">Choose member</option>'+members.map(x=>'<option value="'+x.id+'">'+x.name+'</option>').join('');$('#contribMember').innerHTML=opts;$('#loanMember').innerHTML=opts;$('#membersTable').innerHTML=table(['Member','Contributed','Units','Ownership value','Debt','Expected/month'],members.map(x=>{const o=own.find(y=>y.id===x.id);const debt=loans.filter(l=>l.member_id===x.id).reduce((a,l)=>a+ +l.outstanding,0);return ['<span class="memberlink" onclick="openMember('+x.id+')">'+x.name+'</span>',money(x.contributions),Number(x.units).toLocaleString(),money(o?.ownership_value),money(debt),money(x.expected_monthly)]}));$('#arrearsTable').innerHTML=table(['Member','Expected','Paid this month','Arrears'],arr.map(x=>[x.name,money(x.expected_monthly),money(x.month_paid),'<b class="'+(+x.arrears?'warn':'good')+'">'+money(x.arrears)+'</b>']));$('#contribTable').innerHTML=table(['Member','Amount','Units','Unit price','Month'],contrib.map(x=>[x.member_name,money(x.amount),Number(x.units).toLocaleString(),Number(x.unit_price).toFixed(4),x.month?.slice(0,10)]));$('#loanTable').innerHTML=table(['Member','Principal','Paid','Outstanding','Due','Status','Action'],loans.map(x=>[x.member_name,money(x.principal),money(x.paid),money(x.outstanding),x.due_date?.slice(0,10)||'—','<span class="pill '+(x.display_status==='OVERDUE'?'warn':'')+'">'+x.display_status+'</span>',token&&+x.outstanding>0?'<button class="btn" onclick="repay('+x.id+')">Repay</button>':'—']));$('#investmentTable').innerHTML=table(['Investment','Type','Cost','Value','Gain'],inv.map(x=>[x.name,x.type.replaceAll('_',' '),money(x.cost),money(x.current_value),'<span class="good">'+money(x.gain)+'</span>']));$('#ownershipTable').innerHTML=table(['Member','Units','Ownership','Current value'],own.map(x=>[x.name,Number(x.units).toLocaleString(),x.ownership_pct.toFixed(2)+'%',money(x.ownership_value)]));$('#transactionTable').innerHTML=table(['Date','Type','Member','Amount','Reference'],tx.map(x=>[x.tx_date?.slice(0,10),x.kind.replaceAll('_',' '),x.member_name||'Group',money(x.amount),x.reference||'—']));setAdminUI()}catch(e){$('#status').textContent='Offline';console.error(e)}}
-$('#memberForm').onsubmit=async e=>{e.preventDefault();try{await post('/members',Object.fromEntries(new FormData(e.target)));e.target.reset();closeModal('memberModal');toast('Member added');refresh()}catch(x){toast(x.message)}};
-$('#contribForm').onsubmit=async e=>{e.preventDefault();try{let d=Object.fromEntries(new FormData(e.target));d.amount=+d.amount;await post('/contributions',d);e.target.reset();toast('Contribution recorded');refresh()}catch(x){toast(x.message)}};
-$('#loanForm').onsubmit=async e=>{e.preventDefault();try{let d=Object.fromEntries(new FormData(e.target));d.principal=+d.principal;d.interest_rate=+d.interest_rate;await post('/loans',d);e.target.reset();toast('Loan issued');refresh()}catch(x){toast(x.message)}};
-$('#investmentForm').onsubmit=async e=>{e.preventDefault();try{let d=Object.fromEntries(new FormData(e.target));['quantity','cost','current_value'].forEach(k=>d[k]=+d[k]||0);await post('/investments',d);e.target.reset();toast('Investment added');refresh()}catch(x){toast(x.message)}};
-$('#exportBtn').onclick=async()=>{const r=await fetch('/api/export/transactions',{headers:{Authorization:'Bearer '+token}});const b=await r.blob();const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='kirathimo-transactions.csv';a.click();URL.revokeObjectURL(a.href)};
-setAdminUI();refresh();setInterval(refresh,30000);
-</script></body></html>
+
+
+<!-- LOGIN -->
+
+<div id="loginModal" class="login hidden">
+
+  <div class="card">
+
+    <h2>Admin login</h2>
+
+    <p class="muted">
+      Use the admin account configured for this deployment.
+    </p>
+
+    <form id="loginForm" class="form">
+
+      <input
+        name="email"
+        type="email"
+        placeholder="Admin email"
+        required
+      >
+
+      <input
+        name="password"
+        type="password"
+        placeholder="Password"
+        required
+      >
+
+      <button class="btn primary">
+        Sign in
+      </button>
+
+    </form>
+
+    <p id="loginError" class="warn"></p>
+
+  </div>
+
+</div>
+
+
+<!-- ADD MEMBER -->
+
+<div id="memberModal" class="login hidden">
+
+  <div class="card">
+
+    <h2>Add member</h2>
+
+    <form id="memberForm" class="form">
+
+      <input
+        name="name"
+        placeholder="Full name"
+        required
+      >
+
+      <input
+        name="phone"
+        placeholder="Phone"
+      >
+
+      <input
+        name="email"
+        type="email"
+        placeholder="Email"
+      >
+
+      <input
+        name="expected_monthly"
+        type="number"
+        step="0.01"
+        placeholder="Expected monthly contribution (KSh)"
+      >
+
+      <button class="btn primary">
+        Create member
+      </button>
+
+      <button
+        type="button"
+        class="btn"
+        onclick="closeModal('memberModal')">
+        Cancel
+      </button>
+
+    </form>
+
+  </div>
+
+</div>
+
+
+<div id="toast" class="toast"></div>
+
+
+<script>
+
+const $ = s => document.querySelector(s);
+
+const api = '/api';
+
+let token = localStorage.getItem('kirathimo_token');
+
+
+/* =========================
+   HELPERS
+========================= */
+
+const money = n =>
+  'KSh ' +
+  Number(n || 0).toLocaleString('en-KE',{
+    minimumFractionDigits:2,
+    maximumFractionDigits:2
+  });
+
+
+async function parseResponse(r){
+
+  const text = await r.text();
+
+  let data;
+
+  try{
+    data = JSON.parse(text);
+  }catch(e){
+
+    console.error(
+      'Server returned non-JSON:',
+      text.substring(0,500)
+    );
+
+    throw new Error(
+      'Server returned an unexpected response. Please check the API endpoint.'
+    );
+  }
+
+  if(!r.ok){
+
+    throw new Error(
+      data.error ||
+      data.message ||
+      'Request failed'
+    );
+
+  }
+
+  return data;
+}
+
+
+async function get(u){
+
+  const r = await fetch(
+    api + u,
+    {
+      headers:token
+        ? {Authorization:'Bearer '+token}
+        : {}
+    }
+  );
+
+  if(r.status === 401 && token){
+
+    logout();
+
+    throw new Error('Login expired');
+
+  }
+
+  return parseResponse(r);
+
+}
+
+
+async function post(u,d){
+
+  const r = await fetch(
+    api + u,
+    {
+      method:'POST',
+
+      headers:{
+        'Content-Type':'application/json',
+
+        ...(token
+          ? {Authorization:'Bearer '+token}
+          : {})
+      },
+
+      body:JSON.stringify(d)
+    }
+  );
+
+  return parseResponse(r);
+
+}
+
+
+function table(headers,rows){
+
+  if(!rows.length){
+
+    return '<p class="muted">No records yet.</p>';
+
+  }
+
+  return `
+    <table>
+
+      <thead>
+        <tr>
+          ${headers.map(x=>'<th>'+x+'</th>').join('')}
+        </tr>
+      </thead>
+
+      <tbody>
+
+        ${rows.map(row=>`
+
+          <tr>
+            ${row.map(x=>'<td>'+x+'</td>').join('')}
+          </tr>
+
+        `).join('')}
+
+      </tbody>
+
+    </table>
+  `;
+}
+
+
+function showTab(id){
+
+  document
+    .querySelectorAll('.tabs button')
+    .forEach(x =>
+      x.classList.toggle(
+        'active',
+        x.dataset.tab === id
+      )
+    );
+
+  document
+    .querySelectorAll('.panel')
+    .forEach(x =>
+      x.classList.remove('active')
+    );
+
+  const panel = $('#'+id);
+
+  if(panel){
+    panel.classList.add('active');
+  }
+
+}
+
+
+document
+  .querySelectorAll('.tabs button')
+  .forEach(
+    b => b.onclick = () => showTab(b.dataset.tab)
+  );
+
+
+function openModal(id){
+
+  $('#'+id).classList.remove('hidden');
+
+}
+
+
+function closeModal(id){
+
+  $('#'+id).classList.add('hidden');
+
+}
+
+
+function setAdminUI(){
+
+  document
+    .querySelectorAll('.adminOnly')
+    .forEach(
+      x => x.classList.toggle(
+        'hidden',
+        !token
+      )
+    );
+
+  $('#loginBtn')
+    .classList.toggle(
+      'hidden',
+      !!token
+    );
+
+  $('#logoutBtn')
+    .classList.toggle(
+      'hidden',
+      !token
+    );
+
+  $('#auditTab')
+    .classList.toggle(
+      'hidden',
+      !token
+    );
+
+}
+
+
+function toast(t){
+
+  $('#toast').textContent = t;
+
+  $('#toast').style.display = 'block';
+
+  setTimeout(
+    () => $('#toast').style.display = 'none',
+    2500
+  );
+
+}
+
+
+function logout(){
+
+  token = null;
+
+  localStorage.removeItem(
+    'kirathimo_token'
+  );
+
+  setAdminUI();
+
+  showTab('overview');
+
+  toast('Logged out');
+
+}
+
+
+$('#logoutBtn').onclick = logout;
+
+
+$('#loginBtn').onclick = () =>
+  openModal('loginModal');
+
+
+/* =========================
+   LOGIN
+========================= */
+
+$('#loginForm').onsubmit = async e => {
+
+  e.preventDefault();
+
+  $('#loginError').textContent = '';
+
+  try{
+
+    const d =
+      Object.fromEntries(
+        new FormData(e.target)
+      );
+
+    /*
+      IMPORTANT:
+      Backend endpoint is /api/auth/login.
+      Since api = '/api', we call /auth/login here.
+    */
+
+    const r =
+      await post(
+        '/auth/login',
+        d
+      );
+
+    if(!r || !r.token){
+
+      throw new Error(
+        'Login succeeded but no authentication token was returned.'
+      );
+
+    }
+
+    token = r.token;
+
+    localStorage.setItem(
+      'kirathimo_token',
+      token
+    );
+
+    closeModal('loginModal');
+
+    setAdminUI();
+
+    toast('Admin login successful');
+
+    await refresh();
+
+  }catch(err){
+
+    console.error(err);
+
+    $('#loginError').textContent =
+      err.message ||
+      'Login failed';
+
+  }
+
+};
+
+
+/* =========================
+   MEMBER DETAIL
+========================= */
+
+async function openMember(id){
+
+  try{
+
+    const d =
+      await get('/members/'+id);
+
+    showTab('memberDetail');
+
+    $('#memberDetailBox').innerHTML = `
+
+      <div class="hero">
+
+        <h2>${d.member.name}</h2>
+
+        <p>
+          ${
+            [
+              d.member.phone,
+              d.member.email
+            ]
+            .filter(Boolean)
+            .join(' · ')
+            ||
+            'No contact details'
+          }
+        </p>
+
+      </div>
+
+      <div class="stats">
+
+        <div class="card">
+          <div class="label">Contributed</div>
+          <div class="big">
+            ${money(
+              d.contributions.reduce(
+                (a,x)=>a + +x.amount,
+                0
+              )
+            )}
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="label">Units</div>
+          <div class="big">
+            ${Number(d.units).toLocaleString()}
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="label">Ownership</div>
+          <div class="big">
+            ${Number(d.ownershipPct).toFixed(2)}%
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="label">Ownership value</div>
+          <div class="big">
+            ${money(d.ownershipValue)}
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="label">Total debt</div>
+          <div class="big">
+            ${money(d.totalDebt)}
+          </div>
+        </div>
+
+      </div>
+
+      <div class="card">
+
+        <h3>Loans & debts</h3>
+
+        ${
+          table(
+            [
+              'Issued',
+              'Principal',
+              'Paid',
+              'Outstanding',
+              'Rate',
+              'Due',
+              'Status',
+              'Action'
+            ],
+
+            d.loans.map(x => [
+
+              x.issued_date?.slice(0,10),
+
+              money(x.principal),
+
+              money(x.paid),
+
+              money(x.outstanding),
+
+              x.interest_rate+'%',
+
+              x.due_date?.slice(0,10)||'—',
+
+              '<span class="pill '+
+              (x.overdue?'warn':'')+
+              '">'+
+              (x.overdue?'OVERDUE':x.status)+
+              '</span>',
+
+              token && +x.outstanding>0
+                ? '<button class="btn" onclick="repay('+x.id+')">Repay</button>'
+                : '—'
+
+            ])
+          )
+        }
+
+      </div>
+
+      <div class="card">
+
+        <h3>Contribution history</h3>
+
+        ${
+          table(
+            [
+              'Date',
+              'Month',
+              'Amount',
+              'Units',
+              'Unit price'
+            ],
+
+            d.contributions.map(x => [
+
+              x.contribution_date?.slice(0,10),
+
+              x.month?.slice(0,10),
+
+              money(x.amount),
+
+              Number(x.units).toLocaleString(),
+
+              Number(x.unit_price).toFixed(4)
+
+            ])
+          )
+        }
+
+      </div>
+
+    `;
+
+  }catch(e){
+
+    toast(e.message);
+
+  }
+
+}
+
+
+async function repay(id){
+
+  const amount =
+    prompt(
+      'Repayment amount (KSh):'
+    );
+
+  if(!amount)return;
+
+  try{
+
+    await post(
+      '/loans/'+id+'/repay',
+      {
+        amount:+amount
+      }
+    );
+
+    toast(
+      'Repayment recorded'
+    );
+
+    openMember(id);
+
+    refresh();
+
+  }catch(e){
+
+    toast(e.message);
+
+  }
+
+}
+
+
+/* =========================
+   REFRESH DASHBOARD
+========================= */
+
+async function refresh(){
+
+  try{
+
+    const [
+      dash,
+      nav,
+      members,
+      contrib,
+      loans,
+      inv,
+      own,
+      tx,
+      arr
+    ] = await Promise.all([
+
+      get('/dashboard'),
+
+      get('/nav'),
+
+      get('/members'),
+
+      get('/contributions'),
+
+      get('/loans'),
+
+      get('/investments'),
+
+      get('/ownership'),
+
+      get('/transactions'),
+
+      get('/arrears')
+
+    ]);
+
+
+    $('#status').textContent =
+      '● Live';
+
+
+    /* STATS */
+
+    $('#stats').innerHTML = [
+
+      [
+        'Net assets',
+        money(nav.netAssets)
+      ],
+
+      [
+        'NAV / unit',
+        money(nav.unitPrice)
+      ],
+
+      [
+        'Active members',
+        dash.members
+      ],
+
+      [
+        'Investments',
+        money(nav.investments)
+      ],
+
+      [
+        'Loans outstanding',
+        money(nav.loansReceivable)
+      ],
+
+      [
+        'Monthly arrears',
+        money(dash.arrears)
+      ]
+
+    ].map(x=>`
+
+      <div class="card">
+
+        <div class="label">
+          ${x[0]}
+        </div>
+
+        <div class="big">
+          ${x[1]}
+        </div>
+
+      </div>
+
+    `).join('');
+
+
+    /* NAV */
+
+    $('#navbox').innerHTML = [
+
+      [
+        'Net asset value',
+        money(nav.netAssets)
+      ],
+
+      [
+        'Cash',
+        money(nav.cash)
+      ],
+
+      [
+        'Investments',
+        money(nav.investments)
+      ],
+
+      [
+        'Loans receivable',
+        money(nav.loansReceivable)
+      ],
+
+      [
+        'Total units',
+        Number(nav.totalUnits).toLocaleString()
+      ],
+
+      [
+        'Unit price',
+        money(nav.unitPrice)
+      ]
+
+    ].map(x=>`
+
+      <div class="card">
+
+        <div class="label">
+          ${x[0]}
+        </div>
+
+        <div class="big">
+          ${x[1]}
+        </div>
+
+      </div>
+
+    `).join('');
+
+
+    /* ASSET MIX */
+
+    const types = {};
+
+    inv.forEach(x => {
+
+      types[x.type] =
+        (types[x.type]||0)
+        + +x.current_value;
+
+    });
+
+
+    $('#mix').innerHTML =
+
+      Object.entries(types)
+      .map(
+        ([k,v]) => `
+
+          <p>
+
+            <b>
+              ${k.replaceAll('_',' ')}
+            </b>
+
+            <br>
+
+            ${money(v)}
+
+          </p>
+
+        `
+      )
+      .join('')
+
+      ||
+
+      '<p class="muted">No investments yet.</p>';
+
+
+    /* MEMBER SELECTS */
+
+    const opts =
+      '<option value="">Choose member</option>' +
+
+      members
+        .map(
+          x =>
+            '<option value="'+
+            x.id+
+            '">'+
+            x.name+
+            '</option>'
+        )
+        .join('');
+
+
+    $('#contribMember').innerHTML =
+      opts;
+
+    $('#loanMember').innerHTML =
+      opts;
+
+
+    /* MEMBERS TABLE */
+
+    $('#membersTable').innerHTML =
+
+      table(
+
+        [
+          'Member',
+          'Contributed',
+          'Units',
+          'Ownership value',
+          'Debt',
+          'Expected/month'
+        ],
+
+        members.map(x => {
+
+          const o =
+            own.find(
+              y => y.id === x.id
+            );
+
+          const debt =
+            loans
+              .filter(
+                l => l.member_id === x.id
+              )
+              .reduce(
+                (a,l) =>
+                  a + +l.outstanding,
+                0
+              );
+
+          return [
+
+            '<span class="memberlink" onclick="openMember('+
+            x.id+
+            ')">'+
+            x.name+
+            '</span>',
+
+            money(x.contributions),
+
+            Number(x.units)
+              .toLocaleString(),
+
+            money(
+              o?.ownership_value
+            ),
+
+            money(debt),
+
+            money(
+              x.expected_monthly
+            )
+
+          ];
+
+        })
+
+      );
+
+
+    /* ARREARS */
+
+    $('#arrearsTable').innerHTML =
+
+      table(
+
+        [
+          'Member',
+          'Expected',
+          'Paid this month',
+          'Arrears'
+        ],
+
+        arr.map(x => [
+
+          x.name,
+
+          money(
+            x.expected_monthly
+          ),
+
+          money(
+            x.month_paid
+          ),
+
+          '<b class="'+
+          (+x.arrears?'warn':'good')+
+          '">'+
+          money(x.arrears)+
+          '</b>'
+
+        ])
+
+      );
+
+
+    /* CONTRIBUTIONS */
+
+    $('#contribTable').innerHTML =
+
+      table(
+
+        [
+          'Member',
+          'Amount',
+          'Units',
+          'Unit price',
+          'Month'
+        ],
+
+        contrib.map(x => [
+
+          x.member_name,
+
+          money(x.amount),
+
+          Number(x.units)
+            .toLocaleString(),
+
+          Number(x.unit_price)
+            .toFixed(4),
+
+          x.month?.slice(0,10)
+
+        ])
+
+      );
+
+
+    /* LOANS */
+
+    $('#loanTable').innerHTML =
+
+      table(
+
+        [
+          'Member',
+          'Principal',
+          'Paid',
+          'Outstanding',
+          'Due',
+          'Status',
+          'Action'
+        ],
+
+        loans.map(x => [
+
+          x.member_name,
+
+          money(x.principal),
+
+          money(x.paid),
+
+          money(x.outstanding),
+
+          x.due_date?.slice(0,10)||'—',
+
+          '<span class="pill '+
+          (x.display_status==='OVERDUE'
+            ?'warn':'')+
+          '">'+
+          x.display_status+
+          '</span>',
+
+          token &&
+          +x.outstanding>0
+
+            ? '<button class="btn" onclick="repay('+x.id+')">Repay</button>'
+
+            : '—'
+
+        ])
+
+      );
+
+
+    /* INVESTMENTS */
+
+    $('#investmentTable').innerHTML =
+
+      table(
+
+        [
+          'Investment',
+          'Type',
+          'Cost',
+          'Value',
+          'Gain'
+        ],
+
+        inv.map(x => [
+
+          x.name,
+
+          x.type.replaceAll(
+            '_',
+            ' '
+          ),
+
+          money(x.cost),
+
+          money(x.current_value),
+
+          '<span class="good">'+
+          money(x.gain)+
+          '</span>'
+
+        ])
+
+      );
+
+
+    /* OWNERSHIP */
+
+    $('#ownershipTable').innerHTML =
+
+      table(
+
+        [
+          'Member',
+          'Units',
+          'Ownership',
+          'Current value'
+        ],
+
+        own.map(x => [
+
+          x.name,
+
+          Number(x.units)
+            .toLocaleString(),
+
+          Number(x.ownership_pct)
+            .toFixed(2)+'%',
+
+          money(
+            x.ownership_value
+          )
+
+        ])
+
+      );
+
+
+    /* TRANSACTIONS */
+
+    $('#transactionTable').innerHTML =
+
+      table(
+
+        [
+          'Date',
+          'Type',
+          'Member',
+          'Amount',
+          'Reference'
+        ],
+
+        tx.map(x => [
+
+          x.tx_date?.slice(0,10),
+
+          x.kind.replaceAll(
+            '_',
+            ' '
+          ),
+
+          x.member_name ||
+          'Group',
+
+          money(x.amount),
+
+          x.reference ||
+          '—'
+
+        ])
+
+      );
+
+
+    /* AUDIT LOG */
+
+    if(token){
+
+      try{
+
+        const audit =
+          await get('/audit');
+
+        $('#auditTable').innerHTML =
+
+          table(
+
+            [
+              'Date',
+              'Action',
+              'User',
+              'Details'
+            ],
+
+            audit.map(x => [
+
+              x.created_at
+                ?.slice(0,19)
+                .replace('T',' '),
+
+              x.action,
+
+              x.email ||
+              x.user_email ||
+              'Admin',
+
+              x.details ||
+              x.entity ||
+              '—'
+
+            ])
+
+          );
+
+      }catch(e){
+
+        console.error(
+          'Audit error:',
+          e
+        );
+
+      }
+
+    }
+
+
+    setAdminUI();
+
+
+  }catch(e){
+
+    console.error(
+      'Dashboard refresh error:',
+      e
+    );
+
+    $('#status').textContent =
+      '● Offline';
+
+  }
+
+}
+
+
+/* =========================
+   ADD MEMBER
+========================= */
+
+$('#memberForm').onsubmit =
+  async e => {
+
+    e.preventDefault();
+
+    try{
+
+      await post(
+        '/members',
+        Object.fromEntries(
+          new FormData(e.target)
+        )
+      );
+
+      e.target.reset();
+
+      closeModal(
+        'memberModal'
+      );
+
+      toast(
+        'Member added'
+      );
+
+      refresh();
+
+    }catch(x){
+
+      toast(x.message);
+
+    }
+
+  };
+
+
+/* =========================
+   CONTRIBUTION
+========================= */
+
+$('#contribForm').onsubmit =
+  async e => {
+
+    e.preventDefault();
+
+    try{
+
+      let d =
+        Object.fromEntries(
+          new FormData(e.target)
+        );
+
+      d.amount =
+        +d.amount;
+
+      await post(
+        '/contributions',
+        d
+      );
+
+      e.target.reset();
+
+      toast(
+        'Contribution recorded'
+      );
+
+      refresh();
+
+    }catch(x){
+
+      toast(x.message);
+
+    }
+
+  };
+
+
+/* =========================
+   LOAN
+========================= */
+
+$('#loanForm').onsubmit =
+  async e => {
+
+    e.preventDefault();
+
+    try{
+
+      let d =
+        Object.fromEntries(
+          new FormData(e.target)
+        );
+
+      d.principal =
+        +d.principal;
+
+      d.interest_rate =
+        +d.interest_rate;
+
+      await post(
+        '/loans',
+        d
+      );
+
+      e.target.reset();
+
+      toast(
+        'Loan issued'
+      );
+
+      refresh();
+
+    }catch(x){
+
+      toast(x.message);
+
+    }
+
+  };
+
+
+/* =========================
+   INVESTMENT
+========================= */
+
+$('#investmentForm').onsubmit =
+  async e => {
+
+    e.preventDefault();
+
+    try{
+
+      let d =
+        Object.fromEntries(
+          new FormData(e.target)
+        );
+
+      [
+        'quantity',
+        'cost',
+        'current_value'
+      ].forEach(
+        k =>
+          d[k] =
+            +d[k] || 0
+      );
+
+      await post(
+        '/investments',
+        d
+      );
+
+      e.target.reset();
+
+      toast(
+        'Investment added'
+      );
+
+      refresh();
+
+    }catch(x){
+
+      toast(x.message);
+
+    }
+
+  };
+
+
+/* =========================
+   CSV EXPORT
+========================= */
+
+$('#exportBtn').onclick =
+  async () => {
+
+    try{
+
+      const r =
+        await fetch(
+          api+'/export/transactions',
+          {
+            headers:{
+              Authorization:
+                'Bearer '+token
+            }
+          }
+        );
+
+      if(!r.ok){
+
+        const text =
+          await r.text();
+
+        let message =
+          'Export failed';
+
+        try{
+
+          const data =
+            JSON.parse(text);
+
+          message =
+            data.error ||
+            message;
+
+        }catch{}
+
+        throw new Error(
+          message
+        );
+
+      }
+
+      const b =
+        await r.blob();
+
+      const a =
+        document.createElement('a');
+
+      a.href =
+        URL.createObjectURL(b);
+
+      a.download =
+        'kirathimo-transactions.csv';
+
+      a.click();
+
+      URL.revokeObjectURL(
+        a.href
+      );
+
+    }catch(e){
+
+      toast(e.message);
+
+    }
+
+  };
+
+
+/* =========================
+   START APP
+========================= */
+
+setAdminUI();
+
+refresh();
+
+setInterval(
+  refresh,
+  30000
+);
+
+</script>
+
+</body>
+</html>
