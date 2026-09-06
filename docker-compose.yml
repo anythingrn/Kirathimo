@@ -1,0 +1,22 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: kirathimo
+      POSTGRES_USER: kirathimo
+      POSTGRES_PASSWORD: kirathimo
+    volumes:
+      - kirathimo_data:/var/lib/postgresql/data
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgres://kirathimo:kirathimo@db:5432/kirathimo
+      JWT_SECRET: replace-this-with-a-long-random-secret
+      ADMIN_EMAIL: admin@kirathimo.local
+      ADMIN_PASSWORD: ChangeMe123!
+    depends_on:
+      - db
+volumes:
+  kirathimo_data:
